@@ -1,0 +1,286 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Part 1 - Time Series
+
+###Installing packgaes and loading the flights dataset
+```{r}
+install.packages("https://cran.r-project.org/src/contrib/nycflights13_0.2.2.tar.gz",repos = NULL,method="libcurl")
+library(nycflights13)
+data(flights)
+```
+
+##1.1 Request a NOAA web service token 
+```{r}
+install.packages("rnoaa")
+library(rnoaa)
+
+options("noaakey" = "XEVpzNKfaHIwVEGrwykhyhdBlaLXZmtL")
+jfk_weatherdata <- ncdc(datasetid = 'GHCND',stationid = 'GHCND:USW00094789', 
+                 startdate = '2013-01-01', enddate = '2013-12-31', datatypeid="SNOW", limit = 1000)$data
+flights
+```
+
+###Installing lubridate
+```{r}
+library(lubridate)
+head(flights)
+```
+
+###1.2 GGPLOT representing the snowfall over the given time period using time series
+```{r}
+library(ggplot2)
+jfk_snowdata <-as_date(jfk_weatherdata$date)
+ggplot(jfk_weatherdata,aes(jfk_snowdata,jfk_weatherdata$value))+geom_line()
+```
+
+
+###1.3 Restrict flights data departing from JFK and using aggregate function to compute the daily average departure delay
+```{r}
+jfk_flightsdata <- nycflights13::flights[nycflights13::flights$origin=="JFK",]
+jfk_flightsdata$time_hour <- force_tz(jfk_flightsdata$time_hour,tzone="America/New_York")
+jfk_flightsdata$date <- as_date(jfk_flightsdata$time_hour)
+```
+
+###Fixing the empty values for the departure delays
+```{r}
+jfk_flightsdata$dep_delay[is.na(jfk_flightsdata$dep_delay)] <- 0
+aggregate_data <- aggregate(jfk_flightsdata[,"dep_delay"],list(jfk_flightsdata$date),mean)
+```
+
+###1.4 Scatterplot of snowfall against the daily average departure-delay
+```{r}
+ggplot(aggregate_data,mapping=aes(jfk_weatherdata$value,aggregate_data$dep_delay))+geom_point()
+```
+
+###1.5 Comment on Scatter plot
+###From the above scatter plot we can say that the snow departure delay is not dependent on snow, as there may be other factors which are causing the delay in the flights departure.
+
+#Part 2 - Statistical Tests
+
+###Installing the dataset and accessing the chickweight dataset.
+```{r}
+install.packages("datasets")
+data("ChickWeight")
+head(ChickWeight)
+```
+
+###2.1 Summarising the dataset 
+```{r}
+summary(ChickWeight)
+```
+
+###Variables data has been collected on
+###Data has been collected on 4 different variables, they are weight, time, chick and the diet.
+
+###Determining the number of chickens, diets and the different ages
+```{r}
+nUm_chicken <- NROW(ChickWeight$Chick)
+sprintf("NUmber of chickens are: %i",nUm_chicken)
+
+num_diet <- levels(ChickWeight$Diet)
+sprintf("Number of diets are: %i",length(num_diet))
+
+num_ages <- length(unique(ChickWeight$Time))
+sprintf("Number of different ages are: %i",num_ages)
+```
+
+
+###2.2 Computing the mean weight for chicks on diet 1 and 2
+```{r}
+diet1_values <- ChickWeight[ChickWeight$Diet=="1",]
+
+diet2_values <- ChickWeight[ChickWeight$Diet=="2",]
+
+mean_weight_diet1 <- mean(diet1_values$weight)
+mean_weight_diet2 <- mean(diet2_values$weight)
+
+sprintf("Mean weight of chicks on diet one is: %f",mean_weight_diet1)
+sprintf("Mean weight of chicks on diet two is: %f",mean_weight_diet2)
+```
+```{r}
+list1 <- list()
+for(i in levels(factor(ChickWeight$Diet)))
+{
+  list1[[i]]<- table(ChickWeight$Time[ChickWeight$Diet==i])
+}
+list1
+```
+
+###Using the paired t-test to check the distribution of the data
+```{r}
+diet1_age0<- subset(diet1_values,diet1_values$Time==c("10"))
+
+diet1_final <- data.frame(rbind(diet1_age0[1:10,]))
+
+hist(diet1_final$weight)
+```
+
+```{r}
+diet2_age0<- subset(diet2_values,diet2_values$Time==c("10"))
+
+diet2_final <- data.frame(rbind(diet2_age0))
+hist(diet2_final$weight)
+
+```
+
+```{r}
+t.test(diet1_final$weight,diet2_final$weight,paired=FALSE,conf.level = 0.95)
+```
+
+```{r}
+wilcox.test(diet1_final$weight,diet2_final$weight,conf.level = 0.95,paired=FALSE,conf.int = TRUE)
+```
+
+###2.3 How chicks on each diet experienced growth between 20 and 21 days
+```{r}
+library(ggplot2)
+time_20 <- ChickWeight[ChickWeight$Time=="20",]
+time_21 <- ChickWeight[ChickWeight$Time=="21",]
+time_20_21 <- rbind(time_20,time_21)
+ggplot(data=time_20_21, mapping=aes(x=time_20_21$Diet,y=time_20_21$weight,fill=time_20_21$Diet))+geom_bar(position="dodge",stat="identity")+facet_wrap(~time_20_21$Time)
+```
+
+
+###2.4 One-way ANOVA analysis to determine whether the weights of the chicks differ significnatly across all the diets at the age of 21 days
+```{r}
+chick_age <- ChickWeight[ChickWeight$Time=="21",]
+
+onewayAnova.model<- aov(chick_age$weight~chick_age$Diet,chick_age)
+summary(onewayAnova.model)
+```
+
+###2.5 A two-way ANOVA analysis by incorporating the age of the chicks at different stages
+```{r}
+chick_age10 <- ChickWeight[ChickWeight$Time=="10",]
+chick_age20 <- ChickWeight[ChickWeight$Time=="20",]
+
+chick_finalset <- rbind(chick_age10,chick_age20)
+```
+
+
+```{r}
+twowayAnova.model <- aov(chick_finalset$weight ~ chick_finalset$Diet + chick_finalset$Time + chick_finalset$Diet*chick_finalset$Time, chick_finalset )
+summary(twowayAnova.model)
+```
+
+
+#Part 3 - Regression
+
+###Installing the gapminder package
+```{r}
+install.packages("gapminder")
+library(gapminder)
+```
+
+###3.1 Using India as a country to fit a linear model to Life expectancy over time.
+```{r}
+library(dplyr)
+india <- filter(gapminder, country=="India")
+india_mod <- lm(lifeExp ~ year, data=india)
+```
+
+```{r}
+head(india)
+```
+
+###Viewing the model
+```{r}
+install.packages("mosaic")
+library(mosaic)
+plotModel(india_mod, system="g")
+```
+
+###Augmenting the fitting model for processing
+```{r}
+library(broom)
+india_mod_df <- augment(india_mod)
+```
+
+###Constant Variance
+```{r}
+india_mod_df %>%
+  ggplot(aes(x=year,y=.resid)) +
+  geom_hline(yintercept = 0, color = "steelblue")+
+  geom_point()
+
+india_mod_df %>%
+  ggplot(aes(x=.fitted,y=.resid)) +
+  geom_hline(yintercept = 0, color = "steelblue")+
+  geom_point()
+```
+
+###Linearity
+```{r}
+india_mod_df %>%
+  ggplot(aes(x=year,y=.resid)) +
+  geom_hline(yintercept = 0, color = "steelblue")+
+  geom_point()+
+  geom_smooth(se=FALSE)
+```
+
+###Normality of error
+```{r}
+india_mod_df %>%
+  ggplot(aes(sample=.std.resid)) +
+  stat_qq()+
+  geom_abline(color="steelblue")
+```
+
+###Quality Metrics
+```{r}
+glance(india_mod)
+```
+
+
+###3.2 Using multiple linear regression on the gapminder dataset
+```{r}
+life_expectancy_2007 <- gapminder %>% filter(year==2007,continent %in% c("Asia","Africa","Europe") )
+```
+
+```{r}
+life_mod1 <- lm(lifeExp ~ gdpPercap, data= life_expectancy_2007)
+plotModel(life_mod1)
+summary(life_mod1)
+```
+
+```{r}
+life_mod2 <- update(life_mod1, . ~ . + continent)
+plotModel(life_mod2)
+summary(life_mod2)
+```
+
+```{r}
+life_mod3 <- update(life_mod2, .~.+ continent*gdpPercap)
+plotModel(life_mod3)
+summary(life_mod3)
+```
+
+```{r}
+install.packages("mgcv")
+library(mgcv)
+```
+```{r}
+gam_model1 <- gam(lifeExp ~ s(gdpPercap), data=life_expectancy_2007)
+plotModel(gam_model1)
+summary(gam_model1)
+```
+
+```{r}
+gam_model2 <- gam(lifeExp ~ s(gdpPercap) + continent, data=life_expectancy_2007)
+plotModel(gam_model2)
+summary(gam_model2)
+```
+
+```{r}
+gam_model3 <- gam(lifeExp ~ s(gdpPercap, by=continent) + continent, data=life_expectancy_2007)
+plotModel(gam_model3)
+summary(gam_model3)
+```
+
+```{r}
+plot.gam(gam_model3)
+```
+
